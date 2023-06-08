@@ -2,10 +2,27 @@ const express = require('express');
 const app = express();
 const cors = require('cors');
 require('dotenv').config()
+const jwt = require('jsonwebtoken');
 
 // middlewarea
 app.use(cors());
 app.use(express.json());
+
+// verify jwt
+const verifyJWT = (req, res, next) => {
+    const authorization = req.headers.authorization;
+    if (!authorization) {
+        return res.status(401).send({ message: 'No token provided.' });
+    }
+    const token = authorization.split(' ')[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+            res.status(401).send({ message: 'unauthorized access' });
+        }
+        req.decoded = decoded;
+        next();
+    })
+}
 
 
 const { MongoClient, ServerApiVersion } = require('mongodb');
@@ -28,12 +45,20 @@ async function run() {
 
         const usersCollection = client.db("summercampDb").collection("users");
 
+        // Jwt
+        app.post("/jwt", (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+            res.send({ token })
+        })
+
+
         app.get('/', (req, res) => {
             res.send('Summer camp is running!')
         })
 
         // users
-        app.get('/users', async (req, res) => {
+        app.get('/users', verifyJWT, async (req, res) => {
             const result = await usersCollection.find().toArray();
             res.send(result);
         });
@@ -62,5 +87,5 @@ async function run() {
 run().catch(console.dir);
 
 app.listen(5000, () => {
-    console.log('Example app listening on port 3000!')
+    console.log('Example app listening on port 5000!')
 })
