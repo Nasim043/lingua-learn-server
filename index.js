@@ -17,7 +17,7 @@ const verifyJWT = (req, res, next) => {
     const token = authorization.split(' ')[1];
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
         if (err) {
-            res.status(401).send({ message: 'unauthorized access' });
+            return res.status(401).send({ message: 'unauthorized access' });
         }
         req.decoded = decoded;
         next();
@@ -44,11 +44,12 @@ async function run() {
         await client.connect();
 
         const usersCollection = client.db("summercampDb").collection("users");
+        const classesCollection = client.db("summercampDb").collection("classes");
 
         // Jwt
         app.post("/jwt", (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' })
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '12h' })
             res.send({ token })
         })
 
@@ -65,16 +66,66 @@ async function run() {
 
         app.post('/users', async (req, res) => {
             const users = req.body;
+            users.role = 'student'
             // check if the user is existing
             const user = await usersCollection.findOne({ email: users.email });
             if (user) {
-                res.send({ message: "User already exist" });
+                return res.send({ message: "User already exist" });
             }
             const result = await usersCollection.insertOne(users);
             res.send(result);
         })
 
+        app.get('/users/role/:email', verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            console.log(email);
+            const user = await usersCollection.findOne({ email: email });
+            console.log(user);
+            res.send({ role: user.role });
+        });
 
+        // update role
+        app.patch('/users/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+
+            const filter = { email: email };
+            const options = { upsert: false };
+            const updateDoc = {
+                $set: {
+                    role: user.role
+                },
+            };
+            const result = await usersCollection.updateOne(filter, updateDoc, options);
+            res.send(result);
+        })
+
+        // classes related api
+        app.get('/classes', async (req, res) => {
+            const result = await classesCollection.find().toArray();
+            res.send(result);
+        })
+        app.get('/classes/:email', async (req, res) => {
+            const email = req.params.email;
+            const result = await classesCollection.find({ instructor_email: email }).toArray();
+            res.send(result);
+        })
+        app.post('/classes', verifyJWT, async (req, res) => {
+            const classes = req.body;
+            const result = await classesCollection.insertOne(classes);
+            res.send(result);
+        })
+
+        // instructor related api
+        app.get('/instructors', verifyJWT, async (req, res) => {
+            const result = await classesCollection.find().toArray();
+            res.send(result);
+        })
+        app.get('/instructors/:email', verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            const result = await classesCollection.find({ email: email }).toArray();
+            res.send(result);
+        })
 
         // Send a ping to confirm a successful connection
         await client.db("admin").command({ ping: 1 });
