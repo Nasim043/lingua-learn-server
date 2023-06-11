@@ -3,6 +3,7 @@ const app = express();
 const cors = require('cors');
 require('dotenv').config()
 const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
 
 // middlewarea
 app.use(cors());
@@ -45,6 +46,7 @@ async function run() {
 
         const usersCollection = client.db("summercampDb").collection("users");
         const classesCollection = client.db("summercampDb").collection("classes");
+        const paymentCollection = client.db("summercampDb").collection("payments");
 
         // Jwt
         app.post("/jwt", (req, res) => {
@@ -228,6 +230,48 @@ async function run() {
         app.get('/instructors/:email', verifyJWT, async (req, res) => {
             const email = req.params.email;
             const result = await classesCollection.find({ email: email }).toArray();
+            res.send(result);
+        })
+
+        // create payment intent
+        app.post('/create-payment-intent', verifyJWT, async (req, res) => {
+            const { price } = req.body;
+            const amount = parseInt(price * 100);
+            const paymentIntent = await stripe.paymentIntents.create({
+                amount: amount,
+                currency: 'usd',
+                payment_method_types: ['card']
+            });
+
+            res.send({
+                clientSecret: paymentIntent.client_secret
+            })
+        })
+        // payment related api
+        app.post('/payments', verifyJWT, async (req, res) => {
+            const payment = req.body;
+            const insertResult = await paymentCollection.insertOne(payment);
+
+
+            const userEmail = req.body.email;
+            const selectedClassId = req.body.course_id;
+
+            // Delete the selectedClassId from the selected array for the user
+            const deleteResult = await usersCollection.updateOne({ email: userEmail }, { $pull: { selected: selectedClassId } });
+
+            // insert the selectedClassId in enrolled courses
+            const insertResultEnrolled = await usersCollection.updateOne(
+                { email: userEmail },
+                { $push: { enrolled: selectedClassId } }
+            );
+
+            res.send({ insertResult, deleteResult, insertResultEnrolled });
+        })
+
+        // get payment history
+        app.get('/paymentHistory/:email', verifyJWT, async (req, res) => {
+            const email = req.params.email;
+            const result = await paymentCollection.find({ email: email }).sort({ date: -1 }).toArray();
             res.send(result);
         })
 
