@@ -25,7 +25,7 @@ const verifyJWT = (req, res, next) => {
 }
 
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.l8zs6j6.mongodb.net/?retryWrites=true&w=majority`;
 // TODO: Connect to Online
 // const uri = "mongodb://127.0.0.1:27017";
@@ -110,7 +110,7 @@ async function run() {
         })
         app.get('/classes/approved', async (req, res) => {
             const query = { status: 'approved' };
-            const result = await classesCollection.find({ query }).toArray();
+            const result = await classesCollection.find(query).toArray();
             res.send(result);
         })
         app.get('/classes/:email', async (req, res) => {
@@ -120,7 +120,39 @@ async function run() {
         })
         app.post('/classes', verifyJWT, async (req, res) => {
             const classes = req.body;
+            classes.enrolled = 0;
             const result = await classesCollection.insertOne(classes);
+            res.send(result);
+        })
+        // update status
+        app.patch('/classes/:id', async (req, res) => {
+            const id = req.params.id;
+            const classes = req.body;
+
+            const filter = { _id: new ObjectId(id) };
+            const options = { upsert: false };
+            const updateDoc = {
+                $set: {
+                    status: classes.status
+                },
+            };
+            const result = await classesCollection.updateOne(filter, updateDoc, options);
+            res.send(result);
+        })
+
+        // update feedback
+        app.patch('/classes/feedback/:id', async (req, res) => {
+            const id = req.params.id;
+            const classes = req.body;
+
+            const filter = { _id: new ObjectId(id) };
+            const options = { upsert: false };
+            const updateDoc = {
+                $set: {
+                    feedback: classes.feedback
+                },
+            };
+            const result = await classesCollection.updateOne(filter, updateDoc, options);
             res.send(result);
         })
 
