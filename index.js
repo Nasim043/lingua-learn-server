@@ -49,7 +49,7 @@ async function run() {
         // Jwt
         app.post("/jwt", (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '12h' })
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '7d' })
             res.send({ token })
         })
 
@@ -76,12 +76,15 @@ async function run() {
             res.send(result);
         })
 
-        app.get('/users/role/:email', verifyJWT, async (req, res) => {
+        app.get('/users/role/:email', async (req, res) => {
             const email = req.params.email;
-            console.log(email);
+
+            // if (req.decoded.email !== email) {
+            //     res.send({ admin: false })
+            // }
+
             const user = await usersCollection.findOne({ email: email });
-            console.log(user);
-            res.send({ role: user.role });
+            res.send({ role: user?.role, user: user });
         });
 
         // update role
@@ -105,6 +108,11 @@ async function run() {
             const result = await classesCollection.find().toArray();
             res.send(result);
         })
+        app.get('/classes/approved', async (req, res) => {
+            const query = { status: 'approved' };
+            const result = await classesCollection.find({ query }).toArray();
+            res.send(result);
+        })
         app.get('/classes/:email', async (req, res) => {
             const email = req.params.email;
             const result = await classesCollection.find({ instructor_email: email }).toArray();
@@ -117,8 +125,9 @@ async function run() {
         })
 
         // instructor related api
-        app.get('/instructors', verifyJWT, async (req, res) => {
-            const result = await classesCollection.find().toArray();
+        app.get('/users/instructors', async (req, res) => {
+            const filter = { role: 'instructor' };
+            const result = await usersCollection.find(filter).toArray();
             res.send(result);
         })
         app.get('/instructors/:email', verifyJWT, async (req, res) => {
