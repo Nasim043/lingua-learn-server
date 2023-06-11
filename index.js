@@ -103,6 +103,54 @@ async function run() {
             res.send(result);
         })
 
+
+        // selected class related api
+        app.get('/users/selected/:mail', async (req, res) => {
+            const userEmail = req.params.mail;
+            console.log(userEmail);
+            const user = await usersCollection.findOne({ email: userEmail }, { selected: 1 });
+            // Extract the selected class IDs from the user document
+            console.log(user);
+            const selectedClassIds = user?.selected;
+            console.log(selectedClassIds);
+            // Retrieve the class information for the selected class IDs
+            const selectedClasses = await classesCollection.aggregate([
+                { $match: { _id: { $in: selectedClassIds.map(id => new ObjectId(id)) } } }
+            ]).toArray();
+            res.send(selectedClasses);
+        })
+
+        app.patch('/users/selected/:classId', async (req, res) => {
+            const userEmail = req.body.email;
+            const selectedClassId = req.params.classId;
+
+            // Check if the selectedClassId exists in the selected array for the user
+            const userExists = await usersCollection.findOne({ email: userEmail, selected: { $in: [selectedClassId] } });
+
+            if (userExists) {
+                // The selectedClassId exists in the selected array
+                return res.send({ error: true, message: "Class already selected" });
+            } else {
+                // The selectedClassId does not exist in the selected array
+                const result = await usersCollection.updateOne(
+                    { email: userEmail },
+                    { $push: { selected: selectedClassId } }
+                );
+
+                res.send(result)
+            }
+        })
+
+        app.patch('/users/selected/delete/:classId', async (req, res) => {
+            const userEmail = req.body.email;
+            const selectedClassId = req.params.classId;
+
+            // Delete the selectedClassId from the selected array for the user
+            const result = await usersCollection.updateOne({ email: userEmail }, { $pull: { selected: selectedClassId } });
+            res.send(result);
+        })
+
+
         // classes related api
         app.get('/classes', async (req, res) => {
             const result = await classesCollection.find().toArray();
@@ -122,6 +170,21 @@ async function run() {
             const classes = req.body;
             classes.enrolled = 0;
             const result = await classesCollection.insertOne(classes);
+            res.send(result);
+        })
+        // update class
+        app.patch('/classes/edit/:id', async (req, res) => {
+            const id = req.params.id;
+            const classes = req.body;
+
+            const filter = { _id: new ObjectId(id) };
+            const options = { upsert: false };
+            const updateDoc = {
+                $set: {
+                    ...classes
+                },
+            };
+            const result = await classesCollection.updateOne(filter, updateDoc, options);
             res.send(result);
         })
         // update status
