@@ -109,12 +109,9 @@ async function run() {
         // selected class related api
         app.get('/users/selected/:mail', async (req, res) => {
             const userEmail = req.params.mail;
-            console.log(userEmail);
             const user = await usersCollection.findOne({ email: userEmail }, { selected: 1 });
             // Extract the selected class IDs from the user document
-            console.log(user);
             const selectedClassIds = user?.selected;
-            console.log(selectedClassIds);
             // Retrieve the class information for the selected class IDs
             const selectedClasses = await classesCollection.aggregate([
                 { $match: { _id: { $in: selectedClassIds.map(id => new ObjectId(id)) } } }
@@ -151,13 +148,38 @@ async function run() {
             const result = await usersCollection.updateOne({ email: userEmail }, { $pull: { selected: selectedClassId } });
             res.send(result);
         })
+        // enrolled classes list
+        app.get('/users/enrolled/:mail', async (req, res) => {
+            const userEmail = req.params.mail;
+            const user = await usersCollection.findOne({ email: userEmail }, { enrolled: 1 });
 
+            // Extract the enrolled class IDs from the user document
+            const enrolledClassIds = user?.enrolled;
+
+            // Retrieve the class information for the enrolled class IDs
+            const enrolledClasses = await classesCollection.aggregate([
+                { $match: { _id: { $in: enrolledClassIds.map(id => new ObjectId(id)) } } }
+            ]).toArray();
+            res.send(enrolledClasses);
+        })
 
         // classes related api
         app.get('/classes', async (req, res) => {
             const result = await classesCollection.find().toArray();
             res.send(result);
         })
+        // popular class and instructors
+        app.get('/classes/popular', async (req, res) => {
+            const query = { status: 'approved' };
+            const result = await classesCollection.find(query).sort({ enrolled: -1 }).limit(6).toArray();
+            res.send(result);
+        })
+        app.get('/instructors/popular', async (req, res) => {
+            const filter = { role: 'instructor' };
+            const result = await usersCollection.find(filter).limit(6).toArray();
+            res.send(result);
+        })
+
         app.get('/classes/approved', async (req, res) => {
             const query = { status: 'approved' };
             const result = await classesCollection.find(query).toArray();
@@ -264,6 +286,10 @@ async function run() {
                 { email: userEmail },
                 { $push: { enrolled: selectedClassId } }
             );
+
+            // inc and dec the seats
+            classesCollection.updateOne({ _id: new ObjectId(selectedClassId) }, { $inc: { enrolled: 1 } });
+            classesCollection.updateOne({ _id: new ObjectId(selectedClassId) }, { $inc: { available_seats: -1 } });
 
             res.send({ insertResult, deleteResult, insertResultEnrolled });
         })
