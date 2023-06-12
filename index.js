@@ -1,6 +1,6 @@
 const express = require('express');
 const app = express();
-const cors = require('cors');
+var cors = require('cors');
 require('dotenv').config()
 const jwt = require('jsonwebtoken');
 const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY)
@@ -42,7 +42,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
         const usersCollection = client.db("summercampDb").collection("users");
         const classesCollection = client.db("summercampDb").collection("classes");
@@ -55,13 +55,37 @@ async function run() {
             res.send({ token })
         })
 
+        const verifyAdmin = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await usersCollection.findOne({ email: email });
+            if (user?.role !== 'admin') {
+                return res.status(403).send({ error: true, message: 'forbidden access' });
+            }
+            next();
+        }
+        const verifyInstructor = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await usersCollection.findOne({ email: email });
+            if (user?.role !== 'instructor') {
+                return res.status(403).send({ error: true, message: 'forbidden access' });
+            }
+            next();
+        }
+        const verifyStudent = async (req, res, next) => {
+            const email = req.decoded.email;
+            const user = await usersCollection.findOne({ email: email });
+            if (user?.role !== 'student') {
+                return res.status(403).send({ error: true, message: 'forbidden access' });
+            }
+            next();
+        }
 
         app.get('/', (req, res) => {
             res.send('Summer camp is running!')
         })
 
         // users
-        app.get('/users', verifyJWT, async (req, res) => {
+        app.get('/users', verifyJWT, verifyAdmin, async (req, res) => {
             const result = await usersCollection.find().toArray();
             res.send(result);
         });
@@ -113,8 +137,11 @@ async function run() {
             // Extract the selected class IDs from the user document
             const selectedClassIds = user?.selected;
             // Retrieve the class information for the selected class IDs
+            if (!selectedClassIds) {
+                return res.send([]);
+            }
             const selectedClasses = await classesCollection.aggregate([
-                { $match: { _id: { $in: selectedClassIds.map(id => new ObjectId(id)) } } }
+                { $match: { _id: { $in: selectedClassIds?.map(id => new ObjectId(id)) } } }
             ]).toArray();
             res.send(selectedClasses);
         })
@@ -124,7 +151,7 @@ async function run() {
             const selectedClassId = req.params.classId;
 
             // Check if the selectedClassId exists in the selected array for the user
-            const userExists = await usersCollection.findOne({ email: userEmail, selected: { $in: [selectedClassId] } });
+            const userExists = await usersCollection.findOne({ email: userEmail, selected: { $in: [new ObjectId(selectedClassId)] } });
 
             if (userExists) {
                 // The selectedClassId exists in the selected array
@@ -156,15 +183,26 @@ async function run() {
             // Extract the enrolled class IDs from the user document
             const enrolledClassIds = user?.enrolled;
 
+            if (!enrolledClassIds) {
+                // The selectedClassId exists in the selected array
+                return res.send([]);
+            } else {
+                // Retrieve the class information for the enrolled class IDs
+                const enrolledClasses = await classesCollection.aggregate([
+                    { $match: { _id: { $in: enrolledClassIds?.map(id => new ObjectId(id)) } } }
+                ]).toArray();
+                res.send(enrolledClasses);
+            }
+
             // Retrieve the class information for the enrolled class IDs
-            const enrolledClasses = await classesCollection.aggregate([
-                { $match: { _id: { $in: enrolledClassIds.map(id => new ObjectId(id)) } } }
-            ]).toArray();
-            res.send(enrolledClasses);
+            // const enrolledClasses = await classesCollection.aggregate([
+            //     { $match: { _id: { $in: enrolledClassIds?.map(id => new ObjectId(id)) } } }
+            // ]).toArray();
+            // res.send(enrolledClasses);
         })
 
         // classes related api
-        app.get('/classes', async (req, res) => {
+        app.get('/classes', verifyJWT, verifyAdmin, async (req, res) => {
             const result = await classesCollection.find().toArray();
             res.send(result);
         })
@@ -185,7 +223,7 @@ async function run() {
             const result = await classesCollection.find(query).toArray();
             res.send(result);
         })
-        app.get('/classes/:email', async (req, res) => {
+        app.get('/classes/:email', verifyJWT, verifyInstructor, async (req, res) => {
             const email = req.params.email;
             const result = await classesCollection.find({ instructor_email: email }).toArray();
             res.send(result);
@@ -256,7 +294,7 @@ async function run() {
         })
 
         // create payment intent
-        app.post('/create-payment-intent', verifyJWT, async (req, res) => {
+        app.post('/create-payment-intent', verifyJWT, verifyStudent, async (req, res) => {
             const { price } = req.body;
             const amount = parseInt(price * 100);
             const paymentIntent = await stripe.paymentIntents.create({
@@ -270,7 +308,7 @@ async function run() {
             })
         })
         // payment related api
-        app.post('/payments', verifyJWT, async (req, res) => {
+        app.post('/payments', verifyJWT, verifyStudent, async (req, res) => {
             const payment = req.body;
             const insertResult = await paymentCollection.insertOne(payment);
 
@@ -295,7 +333,7 @@ async function run() {
         })
 
         // get payment history
-        app.get('/paymentHistory/:email', verifyJWT, async (req, res) => {
+        app.get('/paymentHistory/:email', verifyJWT, verifyStudent, async (req, res) => {
             const email = req.params.email;
             const result = await paymentCollection.find({ email: email }).sort({ date: -1 }).toArray();
             res.send(result);
